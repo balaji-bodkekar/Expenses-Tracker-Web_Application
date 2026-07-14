@@ -30,7 +30,7 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "8081:8080"
+      - "8080:8080"
     networks:
       - appbridge
     depends_on:
