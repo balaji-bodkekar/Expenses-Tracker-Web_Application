@@ -19,18 +19,17 @@ services:
     restart: always
 
   mainapp:
-    build:  # ← Change from 'image' to 'build'
+    build:
       context: .
       dockerfile: Dockerfile
     container_name: Expensetracker
     environment:
       SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/${DB_NAME}?allowPublicKeyRetrieval=true&useSSL=false"
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
+      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/${DB_NAME}?allowPublicKeyRetrieval=true&useSSL=false"
+      SERVER_PORT: 8081
     ports:
-      - "8080:8080"
+      - "8081:8081"
     networks:
       - appbridge
     depends_on:
