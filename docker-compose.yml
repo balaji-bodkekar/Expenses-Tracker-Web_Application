@@ -35,7 +35,7 @@ services:
 
 networks:
   appbridge:
-    external: true
+    #external: true
 
 volumes:
   mysql-data:
