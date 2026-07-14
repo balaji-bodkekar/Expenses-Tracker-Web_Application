@@ -8,6 +8,9 @@ on:
 permissions:
   id-token: write
   contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   AWS_REGION: us-east-1
@@ -52,6 +55,7 @@ jobs:
           path: target/site/jacoco
           
   build-and-push:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
