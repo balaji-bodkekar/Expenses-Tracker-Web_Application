@@ -4,14 +4,14 @@ services:
     image: mysql:latest
     container_name: mysql
     environment:
-      MYSQL_ROOT_PASSWORD: Test@123
-      MYSQL_DATABASE: expenses_tracker
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
     volumes:
-      - ./mysql-data:/var/lib/mysql
+      - mysql-data:/var/lib/mysql
     networks:
       - appbridge
     healthcheck:
-      test: ["CMD","mysqladmin","ping","-h","localhost","-uroot","-pTest@123"]
+      test: ["CMD","mysqladmin","ping","-h","localhost","-uroot","-p${DB_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -19,22 +19,28 @@ services:
     restart: always
 
   mainapp:
+    build:  # ← Change from 'image' to 'build'
+      context: .
+      dockerfile: Dockerfile
+    container_name: Expensetracker
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/expenses_tracker?useSSL=false&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: ${DB_USER}
+      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/${DB_NAME}?allowPublicKeyRetrieval=true&useSSL=false"
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-      SERVER_PORT: 8080  # Internal port
     ports:
       - "8081:8080"
     networks:
       - appbridge
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     restart: always
 
 networks:
   appbridge:
-    #external: true
+    driver: bridge
 
 volumes:
   mysql-data:
