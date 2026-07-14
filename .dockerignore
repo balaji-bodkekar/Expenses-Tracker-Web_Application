@@ -1,1 +1,7 @@
 mysql-data/
+.git
+.gitignore
+target/
+.DS_Store
+*.md
+node_modules/
