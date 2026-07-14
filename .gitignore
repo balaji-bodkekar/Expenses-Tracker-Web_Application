@@ -32,5 +32,17 @@ build/
 ### VS Code ###
 .vscode/
 
-### enviroenment ###
+### Environment & Secrets (NEVER commit these) ###
 .env
+.env.local
+.env.*.local
+
+### Docker Volumes (Database Data) ###
+mysql-data/
+mysql/
+db-data/
+
+### OS ###
+.DS_Store
+Thumbs.db
+*.log
