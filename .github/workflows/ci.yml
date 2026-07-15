@@ -169,6 +169,7 @@ jobs:
           echo "Docker Image URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
   
   # TIER 4: Local Integration Verification on Runner
+  # TIER 4: Local Integration Verification on Runner
   verify-deployment:
     name: Verify ECR Image on Runner
     needs: build-and-push
@@ -187,32 +188,59 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Pull and Run Application Container
+      - name: Pull and Run Isolated Architecture
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ env.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
+          DB_NAME: expenses_db
+          DB_USER: root
+          DB_PASSWORD: test_password
         run: |
-          # Image pull karo
-          docker pull $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          # 1. Custom runtime bridge network setup
+          docker network create appbridge
           
-          # Background mein container run karo
-          docker run -d --name test-app -p 8080:8080 $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          # 2. Ephemeral MySQL database container spin up karein
+          docker run -d \
+            --name mysql \
+            --network appbridge \
+            -e MYSQL_ROOT_PASSWORD=$DB_PASSWORD \
+            -e MYSQL_DATABASE=$DB_NAME \
+            mysql:latest
           
-          # Container ko start hone ka time do
-          echo "Waiting for Spring Boot to start..."
+          # Wait window for MySQL initialization
+          echo "Waiting for database sidecar layer..."
           sleep 20
           
-          # Check health status
-          if curl -s --fail http://localhost:8080/actuator/health; then
-            echo "Ekdum mast! Application is up and running."
+          # 3. Main Application setup with exact docker-compose environment parity
+          docker run -d \
+            --name Expensetracker \
+            --network appbridge \
+            -p 8081:8081 \
+            -e SPRING_DATASOURCE_USERNAME=$DB_USER \
+            -e SPRING_DATASOURCE_PASSWORD=$DB_PASSWORD \
+            -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql:3306/$DB_NAME?allowPublicKeyRetrieval=true&useSSL=false" \
+            -e SERVER_PORT=8081 \
+            $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          
+          # 4. Spring Boot initialization window
+          echo "Waiting for Spring Boot context activation..."
+          sleep 25
+          
+          # 5. Check logs & verify port 8081 responsiveness
+          docker ps
+          
+          # Dynamic fallback mechanism using root container endpoint
+          if curl -s --fail http://localhost:8081/; then
+            echo "Ekdum mast! Application successfully validated on port 8081."
           else
-            echo "Health check failed. Showing container logs:"
-            docker logs test-app
+            echo "Verification failed! Printing container telemetry logs:"
+            docker logs Expensetracker
             exit 1
           fi
 
-      - name: Cleanup Container
+      - name: Infrastructure Cleanup
         if: always()
         run: |
-          docker rm -f test-app || true
+          docker rm -f Expensetracker mysql || true
+          docker network rm appbridge || true
