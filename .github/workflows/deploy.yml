@@ -1,0 +1,75 @@
+name: CD - Deploy to Amazon EKS
+
+on:
+  workflow_run:
+    workflows:
+      - "CI - Three-Tier Testing Strategy"
+    types:
+      - completed
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: expense-eks-cluster
+  HELM_RELEASE: expense-tracker
+  HELM_CHART_PATH: ./helm/expense-tracker
+
+jobs:
+
+  deploy:
+
+    if: >
+      github.event.workflow_run.conclusion == 'success'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::828562155228:role/github-actions-eks-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name $CLUSTER_NAME
+
+      - name: Verify Cluster
+        run: |
+          kubectl get nodes
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy Application
+        run: |
+          helm upgrade \
+            --install \
+            $HELM_RELEASE \
+            $HELM_CHART_PATH \
+            --namespace expense-tracker \
+            --create-namespace \
+            --set image.tag=${{ github.event.workflow_run.head_sha }}
+
+      - name: Wait for Rollout
+        run: |
+          kubectl rollout status deployment/$HELM_RELEASE-expense-tracker \
+            -n expense-tracker \
+            --timeout=300s
+
+      - name: Verify Pods
+        run: |
+          kubectl get pods -n expense-tracker
+
+      - name: Verify Service
+        run: |
+          kubectl get svc -n expense-trackercd
