@@ -167,3 +167,52 @@ jobs:
       - name: Print Image URI
         run: |
           echo "Docker Image URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+  
+  # TIER 4: Local Integration Verification on Runner
+  verify-deployment:
+    name: Verify ECR Image on Runner
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::828562155228:role/github-actions-ecr-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Pull and Run Application Container
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ${{ env.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Image pull karo
+          docker pull $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          
+          # Background mein container run karo
+          docker run -d --name test-app -p 8080:8080 $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          
+          # Container ko start hone ka time do
+          echo "Waiting for Spring Boot to start..."
+          sleep 20
+          
+          # Check health status
+          if curl -s --fail http://localhost:8080/actuator/health; then
+            echo "Ekdum mast! Application is up and running."
+          else
+            echo "Health check failed. Showing container logs:"
+            docker logs test-app
+            exit 1
+          fi
+
+      - name: Cleanup Container
+        if: always()
+        run: |
+          docker rm -f test-app || true
