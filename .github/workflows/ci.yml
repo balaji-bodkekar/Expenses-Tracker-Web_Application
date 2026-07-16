@@ -41,6 +41,9 @@ jobs:
       - name: Run Spotless Check
         run: mvn spotless:check
       
+      - name: Run Checkstyle
+        run: mvn checkstyle:check
+      
       - name: Run Unit Tests
         run: |
           mvn test \
