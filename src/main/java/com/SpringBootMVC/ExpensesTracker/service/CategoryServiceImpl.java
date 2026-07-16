@@ -7,20 +7,20 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class CategoryServiceImpl implements CategoryService {
-    CategoryRepository categoryRepository;
+  CategoryRepository categoryRepository;
 
-    @Autowired
-    public CategoryServiceImpl(CategoryRepository categoryRepository) {
-        this.categoryRepository = categoryRepository;
-    }
+  @Autowired
+  public CategoryServiceImpl(CategoryRepository categoryRepository) {
+    this.categoryRepository = categoryRepository;
+  }
 
-    @Override
-    public Category findCategoryByName(String name) {
-        return categoryRepository.findByName(name);
-    }
+  @Override
+  public Category findCategoryByName(String name) {
+    return categoryRepository.findByName(name);
+  }
 
-    @Override
-    public Category findCategoryById(int id) {
-        return categoryRepository.findById(id).orElse(null);
-    }
+  @Override
+  public Category findCategoryById(int id) {
+    return categoryRepository.findById(id).orElse(null);
+  }
 }
