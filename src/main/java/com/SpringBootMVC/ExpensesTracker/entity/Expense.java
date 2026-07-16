@@ -4,126 +4,140 @@ import jakarta.persistence.*;
 
 @Entity
 public class Expense {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
-    @Column(name = "amount")
-    private int amount;
-    @Column(name = "date_time")
-    private String dateTime;
-    @Column(name = "description", length = 400)
-    private String description;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private int id;
 
-    @Transient
-    private String categoryName;
-    @Transient
-    private String date;
-    @Transient
-    private String time;
+  @Column(name = "amount")
+  private int amount;
 
-    @ManyToOne(fetch = FetchType.EAGER, cascade = CascadeType.PERSIST)
-    @JoinColumn(name = "client_id")
-    Client client;
+  @Column(name = "date_time")
+  private String dateTime;
 
-    @ManyToOne(fetch = FetchType.EAGER, cascade = CascadeType.PERSIST)
-    @JoinColumn(name = "category_id")
-    Category category;
+  @Column(name = "description", length = 400)
+  private String description;
 
-    public Expense() {
-    }
+  @Transient private String categoryName;
+  @Transient private String date;
+  @Transient private String time;
 
-    public Expense(int amount, String dateTime, String description, Client client, Category category) {
-        this.amount = amount;
-        this.dateTime = dateTime;
-        this.description = description;
-        this.client = client;
-        this.category = category;
-    }
+  @ManyToOne(fetch = FetchType.EAGER, cascade = CascadeType.PERSIST)
+  @JoinColumn(name = "client_id")
+  Client client;
 
-    public int getId() {
-        return id;
-    }
+  @ManyToOne(fetch = FetchType.EAGER, cascade = CascadeType.PERSIST)
+  @JoinColumn(name = "category_id")
+  Category category;
 
-    public void setId(int id) {
-        this.id = id;
-    }
+  public Expense() {}
 
-    public int getAmount() {
-        return amount;
-    }
+  public Expense(
+      int amount, String dateTime, String description, Client client, Category category) {
+    this.amount = amount;
+    this.dateTime = dateTime;
+    this.description = description;
+    this.client = client;
+    this.category = category;
+  }
 
-    public void setAmount(int amount) {
-        this.amount = amount;
-    }
+  public int getId() {
+    return id;
+  }
 
-    public String getDateTime() {
-        return dateTime;
-    }
+  public void setId(int id) {
+    this.id = id;
+  }
 
-    public void setDateTime(String dateTime) {
-        this.dateTime = dateTime;
-    }
+  public int getAmount() {
+    return amount;
+  }
 
-    public String getDescription() {
-        return description;
-    }
+  public void setAmount(int amount) {
+    this.amount = amount;
+  }
 
-    public void setDescription(String description) {
-        this.description = description;
-    }
+  public String getDateTime() {
+    return dateTime;
+  }
 
-    public String getCategoryName() {
-        return categoryName;
-    }
+  public void setDateTime(String dateTime) {
+    this.dateTime = dateTime;
+  }
 
-    public void setCategoryName(String categoryName) {
-        this.categoryName = categoryName;
-    }
+  public String getDescription() {
+    return description;
+  }
 
-    public String getDate() {
-        return date;
-    }
+  public void setDescription(String description) {
+    this.description = description;
+  }
 
-    public void setDate(String date) {
-        this.date = date;
-    }
+  public String getCategoryName() {
+    return categoryName;
+  }
 
-    public String getTime() {
-        return time;
-    }
+  public void setCategoryName(String categoryName) {
+    this.categoryName = categoryName;
+  }
 
-    public void setTime(String time) {
-        this.time = time;
-    }
+  public String getDate() {
+    return date;
+  }
 
-    public Client getClient() {
-        return client;
-    }
+  public void setDate(String date) {
+    this.date = date;
+  }
 
-    public void setClient(Client client) {
-        this.client = client;
-    }
+  public String getTime() {
+    return time;
+  }
 
-    public Category getCategory() {
-        return category;
-    }
+  public void setTime(String time) {
+    this.time = time;
+  }
 
-    public void setCategory(Category category) {
-        this.category = category;
-    }
+  public Client getClient() {
+    return client;
+  }
 
-    @Override
-    public String toString() {
-        return "Expense{" +
-                "id=" + id +
-                ", amount=" + amount +
-                ", dateTime='" + dateTime + '\'' +
-                ", description='" + description + '\'' +
-                ", categoryName='" + categoryName + '\'' +
-                ", date='" + date + '\'' +
-                ", time='" + time + '\'' +
-                ", client=" + client +
-                ", category=" + category +
-                '}';
-    }
+  public void setClient(Client client) {
+    this.client = client;
+  }
+
+  public Category getCategory() {
+    return category;
+  }
+
+  public void setCategory(Category category) {
+    this.category = category;
+  }
+
+  @Override
+  public String toString() {
+    return "Expense{"
+        + "id="
+        + id
+        + ", amount="
+        + amount
+        + ", dateTime='"
+        + dateTime
+        + '\''
+        + ", description='"
+        + description
+        + '\''
+        + ", categoryName='"
+        + categoryName
+        + '\''
+        + ", date='"
+        + date
+        + '\''
+        + ", time='"
+        + time
+        + '\''
+        + ", client="
+        + client
+        + ", category="
+        + category
+        + '}';
+  }
 }

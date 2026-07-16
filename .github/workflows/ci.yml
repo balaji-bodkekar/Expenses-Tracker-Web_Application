@@ -37,6 +37,9 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+
+      - name: Run Spotless Check
+        run: mvn spotless:check
       
       - name: Run Unit Tests
         run: |
