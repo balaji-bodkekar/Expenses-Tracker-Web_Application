@@ -18,6 +18,7 @@
 		<testcontainers.version>1.19.7</testcontainers.version>
 		<spotless.version>2.44.5</spotless.version>
 		<checkstyle.plugin.version>3.6.0</checkstyle.plugin.version>
+		<pmd.plugin.version>3.22.0</pmd.plugin.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -129,6 +130,17 @@
 
             </plugin>
 
+			<!-- PMD -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <version>${pmd.plugin.version}</version>
+
+                <configuration>
+                    <printFailingErrors>true</printFailingErrors>
+                </configuration>
+
+            </plugin>
 
 		</plugins>
 	</build>

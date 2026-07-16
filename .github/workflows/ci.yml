@@ -39,10 +39,13 @@ jobs:
           cache: maven
 
       - name: Run Spotless Check
-        run: mvn spotless:check
+        run: mvn -B spotless:check
       
       - name: Run Checkstyle
-        run: mvn checkstyle:check
+        run: mvn -B checkstyle:check
+
+      - name: PMD
+        run: mvn -B pmd:check
       
       - name: Run Unit Tests
         run: |
