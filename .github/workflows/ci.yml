@@ -12,7 +12,9 @@ on:
         required: false
         default: "false"
         type: choice
-        options: ["true", "false"]
+        options:
+          - "true"
+          - "false"
       debug_timeout:
         description: Minutes before teardown (capped at 15)
         required: false

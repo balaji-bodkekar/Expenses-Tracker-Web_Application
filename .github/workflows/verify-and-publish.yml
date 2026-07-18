@@ -82,19 +82,48 @@ jobs:
             exit 1
           fi
 
-      - name: Optional Manual Live Debugging Tunnel
-        if: ${{ inputs.manual_debug == 'true' }}
-        environment: debug-approval
-        run: |
-         TIMEOUT_MINUTES=${{ inputs.debug_timeout }}
-         CAPPED_MINUTES=$(( TIMEOUT_MINUTES < 15 ? TIMEOUT_MINUTES : 15 ))
-         echo "Runner active for $CAPPED_MINUTES minutes."
-         sleep $((CAPPED_MINUTES * 60))
-
       - name: Infrastructure Cleanup
         if: always()
         run: |
           docker rm -f Expensetracker mysql || true
+          docker network rm appbridge || true
+
+  manual-debug:
+    name: Manual Debug Tunnel
+    needs: smoke-test
+    if: ${{ inputs.manual_debug == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download Image Tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tarball
+          path: /tmp/
+
+      - name: Load Docker Image
+        run: docker load --input /tmp/image.tar
+
+      - name: Run App For Debugging
+        run: |
+          docker network create appbridge || true
+          docker run -d \
+            --name Expensetracker \
+            --network appbridge \
+            -p 8081:8081 \
+            ${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+
+      - name: Hold Runner Open
+        run: |
+          TIMEOUT_MINUTES=${{ inputs.debug_timeout }}
+          CAPPED_MINUTES=$(( TIMEOUT_MINUTES < 15 ? TIMEOUT_MINUTES : 15 ))
+          echo "Runner active for $CAPPED_MINUTES minutes."
+          sleep $((CAPPED_MINUTES * 60))
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f Expensetracker || true
           docker network rm appbridge || true
 
   publish:
