@@ -2,24 +2,24 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
   workflow_dispatch:
-      inputs:
-        manual_debug:
-          description: 'Hold runner open for manual browser testing?'
-          required: false
-          default: 'false'
-          type: choice
-          options:
-            - 'true'
-            - 'false'
-        debug_timeout:
-          description: 'Minutes to wait before destroying the environment'
-          required: false
-          default: '5'
+    inputs:
+      manual_debug:
+        description: Hold runner open for manual browser testing?
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      debug_timeout:
+        description: Minutes to wait before destroying the environment
+        required: false
+        default: "5"
 
 permissions:
   id-token: write
@@ -34,7 +34,6 @@ env:
   ECR_REPOSITORY: springboot-app
 
 jobs:
-  # COMBINED TIER 1 & TIER 2: Fast, Single-Pass Test & Compilation Stage
   test-and-package:
     name: Test, Code Quality & Package
     runs-on: ubuntu-latest
@@ -53,7 +52,6 @@ jobs:
       - name: Code Quality Checks (Spotless, Checkstyle, PMD)
         run: mvn -B spotless:check checkstyle:check pmd:check
 
-      # Runs both Unit and Integration tests in a single runner workspace to leverage Maven build caches fully
       - name: Run All Tests & Package
         run: mvn clean package -B --no-transfer-progress
 
@@ -80,13 +78,12 @@ jobs:
           path: target/*.jar
           retention-days: 14
 
-  # TIER 3: Build & Push Docker Image (Only runs on main after verification passes)
   build-and-push:
     name: Build & Push to ECR
     needs: test-and-package
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.ref == 'main' || github.event_name == 'pull_request'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v4
@@ -114,21 +111,19 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ github.event_name == 'push'}}
-          load: ${{ github.event_name == 'pull_request'}}
+          push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # TIER 4: Local Integration Verification using Resilient Health Checking
   verify-deployment:
     name: Verify ECR Image on Runner
     needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Configure AWS Credentials
@@ -151,8 +146,7 @@ jobs:
           DB_PASSWORD: test_password
         run: |
           docker network create appbridge
-          
-          # Spin up MySQL with an explicit internal healthcheck instead of manual sleeping
+
           docker run -d \
             --name mysql \
             --network appbridge \
@@ -163,13 +157,12 @@ jobs:
             --health-timeout=2s \
             --health-retries=10 \
             mysql:8.4
-          
+
           echo "Waiting for database healthcheck status..."
           until [ "$(docker inspect --format='{{.State.Health.Status}}' mysql)" = "healthy" ]; do
-              sleep 2
+            sleep 2
           done
 
-          # Boot up the Spring application
           docker run -d \
             --name Expensetracker \
             --network appbridge \
@@ -179,20 +172,20 @@ jobs:
             -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql:3306/$DB_NAME?allowPublicKeyRetrieval=true&useSSL=false" \
             -e SERVER_PORT=8081 \
             $REGISTRY/$REPOSITORY:$IMAGE_TAG
-          
-          # Resilient poll instead of 25 seconds blind wait
+
           echo "Polling Spring Boot application endpoint..."
           TIMEOUT=45
           ELAPSED=0
-          until curl -s --fail http://localhost:8081/ || [ $ELAPSED -eq $TIMEOUT ]; do
-              sleep 3
-              ELAPSED=$((ELAPSED + 3))
+
+          until curl -s --fail http://localhost:8081/ || [ $ELAPSED -ge $TIMEOUT ]; do
+            sleep 3
+            ELAPSED=$((ELAPSED + 3))
           done
 
           if curl -s --fail http://localhost:8081/; then
-            echo "Validation successful! Application is responding flawlessly on port 8081."
+            echo "Validation successful! Application is responding on port 8081."
           else
-            echo "Verification failed! Printing application runtime logs:"
+            echo "Verification failed! Printing application logs..."
             docker logs Expensetracker
             exit 1
           fi
@@ -204,28 +197,22 @@ jobs:
           echo "WARNING: Manual debug session requested."
           echo "Exposing port 8081 via temporary tunnel..."
           echo "=========================================================="
-          
-          # Install localtunnel globally via npm
+
           npm install -g localtunnel
-          
-          # Start the tunnel in the background and log the public URL
+
           lt --port 8081 > lt.log 2>&1 &
-          
-          # Give localtunnel a couple seconds to establish the link
+
           sleep 5
-          
+
           echo "----------------------------------------------------------"
           echo "ACCESS YOUR APP LOCALLY VIA THIS URL:"
           cat lt.log | grep -o 'https://[^ ]*' || cat lt.log
           echo "----------------------------------------------------------"
-          
+
           TIMEOUT_MINUTES=${{ github.event.inputs.debug_timeout || 5 }}
-          echo "Runner will remain active for $TIMEOUT_MINUTES minutes. Waiting..."
-          
-          # Sleep for the designated time
+          echo "Runner will remain active for $TIMEOUT_MINUTES minutes."
+
           sleep $((TIMEOUT_MINUTES * 60))
-          
-          echo "Timeout reached. Proceeding to infrastructure cleanup."
 
       - name: Infrastructure Cleanup
         if: always()
