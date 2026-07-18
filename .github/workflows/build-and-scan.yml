@@ -1,0 +1,113 @@
+name: Build, Test & Scan
+
+on:
+  workflow_call:
+
+env:
+  ECR_REPOSITORY: springboot-app
+
+jobs:
+  test-and-package:
+    name: Test, Code Quality & Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build, Package & Quality Checks
+        run: mvn -B --no-transfer-progress clean package spotless:check checkstyle:check pmd:check
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-test-reports
+          path: target/surefire-reports
+          retention-days: 14
+
+      - name: Upload JaCoCo Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+          retention-days: 14
+
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+          retention-days: 14
+
+  build-and-scan:
+    name: Build Image & Security Scan
+    needs: test-and-package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Download JAR Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: target/
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: false
+          outputs: type=docker,dest=/tmp/image.tar
+          tags: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          input: /tmp/image.tar
+          format: cyclonedx
+          output: sbom.cdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclonedx-sbom
+          path: sbom.cdx.json
+          retention-days: 30
+
+      - name: Trivy Scan (report)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          input: /tmp/image.tar
+          format: table
+          exit-code: 0
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      - name: Trivy Scan (gate on CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          input: /tmp/image.tar
+          format: table
+          exit-code: 0
+          ignore-unfixed: true
+          severity: CRITICAL
+
+      - name: Upload Image Tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-tarball
+          path: /tmp/image.tar
+          retention-days: 1

@@ -1,0 +1,161 @@
+name: Smoke Test & Publish
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        required: true
+        type: string
+      manual_debug:
+        required: false
+        type: string
+        default: "false"
+      debug_timeout:
+        required: false
+        type: string
+        default: "5"
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: springboot-app
+
+jobs:
+  smoke-test:
+    name: Smoke Test Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download Image Tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tarball
+          path: /tmp/
+
+      - name: Load Docker Image
+        run: docker load --input /tmp/image.tar
+
+      - name: Start Isolated Test Stack
+        env:
+          DB_NAME: expenses_db
+          DB_USER: root
+          DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+        run: |
+          docker network create appbridge
+
+          docker run -d \
+            --name mysql \
+            --network appbridge \
+            -e MYSQL_ROOT_PASSWORD="$DB_PASSWORD" \
+            -e MYSQL_DATABASE=$DB_NAME \
+            --health-cmd="mysqladmin ping -h localhost -u root -p$DB_PASSWORD" \
+            --health-interval=5s \
+            --health-timeout=2s \
+            --health-retries=10 \
+            mysql:8.4
+
+          until [ "$(docker inspect --format='{{.State.Health.Status}}' mysql)" = "healthy" ]; do
+            sleep 2
+          done
+
+          docker run -d \
+            --name Expensetracker \
+            --network appbridge \
+            -p 8081:8081 \
+            -e SPRING_DATASOURCE_USERNAME=$DB_USER \
+            -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
+            -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql:3306/$DB_NAME?allowPublicKeyRetrieval=true&useSSL=false" \
+            -e SERVER_PORT=8081 \
+            ${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+
+      - name: Poll Application Health
+        run: |
+          TIMEOUT=45
+          ELAPSED=0
+          until curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"' || [ $ELAPSED -ge $TIMEOUT ]; do
+            sleep 3
+            ELAPSED=$((ELAPSED + 3))
+          done
+          if curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"'; then
+            echo "Smoke test passed."
+          else
+            docker logs Expensetracker
+            exit 1
+          fi
+
+      - name: Infrastructure Cleanup
+        if: always()
+        run: |
+          docker rm -f Expensetracker mysql || true
+          docker network rm appbridge || true
+
+  manual-debug:
+    name: Manual Debug Tunnel
+    needs: smoke-test
+    if: ${{ inputs.manual_debug == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download Image Tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tarball
+          path: /tmp/
+
+      - name: Load Docker Image
+        run: docker load --input /tmp/image.tar
+
+      - name: Run App For Debugging
+        run: |
+          docker network create appbridge || true
+          docker run -d \
+            --name Expensetracker \
+            --network appbridge \
+            -p 8081:8081 \
+            ${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+
+      - name: Hold Runner Open
+        run: |
+          TIMEOUT_MINUTES=${{ inputs.debug_timeout }}
+          CAPPED_MINUTES=$(( TIMEOUT_MINUTES < 15 ? TIMEOUT_MINUTES : 15 ))
+          echo "Runner active for $CAPPED_MINUTES minutes."
+          sleep $((CAPPED_MINUTES * 60))
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f Expensetracker || true
+          docker network rm appbridge || true
+
+  publish:
+    name: Push to ECR
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download Image Tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tarball
+          path: /tmp/
+
+      - name: Load Docker Image
+        run: docker load --input /tmp/image.tar
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-ecr-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag & Push Docker Image
+        run: |
+          docker tag \
+            ${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }} \
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
