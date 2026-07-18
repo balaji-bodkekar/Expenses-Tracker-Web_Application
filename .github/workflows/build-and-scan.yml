@@ -4,6 +4,7 @@ on:
   workflow_call:
 
 env:
+  AWS_REGION: us-east-1
   ECR_REPOSITORY: springboot-app
 
 jobs:
@@ -51,6 +52,9 @@ jobs:
     needs: test-and-package
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -62,13 +66,16 @@ jobs:
           name: app-jar
           path: target/
 
+      # Build straight into the local Docker daemon (no tarball) so Trivy
+      # can scan the live image by reference, and so it's ready to push
+      # immediately after the scan gate passes — no save/upload/download
+      # round-trip through GitHub Actions artifact storage.
       - name: Build Docker Image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
-          load: false
-          outputs: type=docker,dest=/tmp/image.tar
+          load: true
           tags: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -76,7 +83,7 @@ jobs:
       - name: Generate SBOM
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          input: /tmp/image.tar
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           format: cyclonedx
           output: sbom.cdx.json
 
@@ -90,15 +97,29 @@ jobs:
       - name: Trivy Scan (gate on CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          input: /tmp/image.tar
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           format: table
-          exit-code: 0
+          exit-code: 1
           ignore-unfixed: true
           severity: CRITICAL
 
-      - name: Upload Image Tarball
-        uses: actions/upload-artifact@v4
+      # Only reachable if the scan gate passed. Pushes the immutable
+      # sha-tagged image to ECR so the next jobs can pull it directly
+      # instead of transferring a tarball artifact.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          name: image-tarball
-          path: /tmp/image.tar
-          retention-days: 1
+          role-to-assume: arn:aws:iam::828562155228:role/github-actions-ecr-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag & Push Scanned Image to ECR
+        run: |
+          docker tag \
+            ${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}

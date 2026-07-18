@@ -16,21 +16,29 @@ jobs:
     name: Smoke Test Image
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Download Image Tarball
-        uses: actions/download-artifact@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          name: image-tarball
-          path: /tmp/
+          role-to-assume: arn:aws:iam::828562155228:role/github-actions-ecr-role
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Load Docker Image
-        run: docker load --input /tmp/image.tar
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Pull Scanned Image
+        run: docker pull ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
 
       - name: Start Isolated Test Stack
         env:
           DB_NAME: expenses_db
           DB_USER: root
           DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
         run: |
           docker network create appbridge
 
@@ -65,7 +73,7 @@ jobs:
             -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
             -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql:3306/$DB_NAME?allowPublicKeyRetrieval=true&useSSL=false" \
             -e SERVER_PORT=8081 \
-            ${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+            "$IMAGE"
 
       - name: Poll Application Health
         run: |
@@ -89,35 +97,33 @@ jobs:
           docker network rm appbridge || true
 
   publish:
-    name: Push to ECR
+    name: Promote to latest
     needs: smoke-test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     permissions:
       id-token: write
       contents: read
     steps:
-      - name: Download Image Tarball
-        uses: actions/download-artifact@v4
-        with:
-          name: image-tarball
-          path: /tmp/
-
-      - name: Load Docker Image
-        run: docker load --input /tmp/image.tar
-
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::828562155228:role/github-actions-ecr-role
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Tag & Push Docker Image
+      # The sha-tagged image was already pushed and scanned in the
+      # build-and-scan stage, and just passed the smoke test above. This
+      # copies the existing image manifest onto the 'latest' tag via the
+      # ECR API directly — no docker pull/push of image bytes required.
+      - name: Promote Verified Image to 'latest'
         run: |
-          docker tag \
-            ${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }} \
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
-          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.image_tag }}
+          aws ecr batch-get-image \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-ids imageTag=${{ inputs.image_tag }} \
+            --query 'images[0].imageManifest' \
+            --output text > manifest.json
+
+          aws ecr put-image \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-tag latest \
+            --image-manifest file://manifest.json
