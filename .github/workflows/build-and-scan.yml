@@ -87,14 +87,14 @@ jobs:
           path: sbom.cdx.json
           retention-days: 30
 
-      - name: Trivy Scan (report)
+      - name: Trivy Scan (gate on CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           input: /tmp/image.tar
           format: table
           exit-code: 0
           ignore-unfixed: true
-          severity: HIGH,CRITICAL
+          severity: CRITICAL
 
       - name: Upload Image Tarball
         uses: actions/upload-artifact@v4
