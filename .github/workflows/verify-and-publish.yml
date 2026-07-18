@@ -53,8 +53,16 @@ jobs:
             --health-retries=10 \
             mysql:8.4
 
+          DB_TIMEOUT=60
+          DB_ELAPSED=0
           until [ "$(docker inspect --format='{{.State.Health.Status}}' mysql)" = "healthy" ]; do
+            if [ $DB_ELAPSED -ge $DB_TIMEOUT ]; then
+              echo "MySQL did not become healthy in time. Container logs:"
+              docker logs mysql
+              exit 1
+            fi
             sleep 2
+            DB_ELAPSED=$((DB_ELAPSED + 2))
           done
 
           docker run -d \
@@ -71,11 +79,11 @@ jobs:
         run: |
           TIMEOUT=45
           ELAPSED=0
-          until curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"' || [ $ELAPSED -ge $TIMEOUT ]; do
+          until curl -sf http://localhost:8081/ | grep -q '"status":"UP"' || [ $ELAPSED -ge $TIMEOUT ]; do
             sleep 3
             ELAPSED=$((ELAPSED + 3))
           done
-          if curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"'; then
+          if curl -sf http://localhost:8081/ | grep -q '"status":"UP"'; then
             echo "Smoke test passed."
           else
             docker logs Expensetracker
