@@ -5,19 +5,16 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-
   workflow_dispatch:
     inputs:
       manual_debug:
-        description: Hold runner open for manual browser testing?
+        description: Requires debug-approval environment reviewer
         required: false
         default: "false"
         type: choice
-        options:
-          - "true"
-          - "false"
+        options: ["true", "false"]
       debug_timeout:
-        description: Minutes to wait before destroying the environment
+        description: Minutes before teardown (capped at 15)
         required: false
         default: "5"
 
@@ -27,236 +24,21 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  AWS_REGION: us-east-1
-  ECR_REPOSITORY: springboot-app
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  test-and-package:
-    name: Test, Code Quality & Package
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  build-and-scan:
+    name: Build, Test & Scan
+    uses: ./.github/workflows/build-and-scan.yml
+    secrets: inherit
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
-
-      - name: Code Quality Checks (Spotless, Checkstyle, PMD)
-        run: mvn -B spotless:check checkstyle:check pmd:check
-
-      - name: Run All Tests & Package
-        run: mvn clean package -B --no-transfer-progress
-
-      - name: Upload Test Reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: surefire-test-reports
-          path: target/surefire-reports
-          retention-days: 14
-
-      - name: Upload JaCoCo Coverage Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jacoco-report
-          path: target/site/jacoco
-          retention-days: 14
-
-      - name: Upload JAR Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-jar
-          path: target/*.jar
-          retention-days: 14
-
-  build-and-push:
-    name: Build & Push to ECR
-    needs: test-and-package
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  verify-and-publish:
+    name: Smoke Test & Publish
+    needs: build-and-scan
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Download JAR Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app-jar
-          path: target/
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::828562155228:role/github-actions-ecr-role
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build Docker Image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          load: false
-          outputs: type=docker,dest=/tmp/image.tar
-          tags: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Generate SBOM
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          input: /tmp/image.tar
-          format: cyclonedx
-          output: sbom.cdx.json
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: cyclonedx-sbom
-          path: sbom.cdx.json
-          retention-days: 30
-
-      - name: Scan Docker Image with Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          input: /tmp/image.tar
-          format: table
-          exit-code: 0
-          ignore-unfixed: true
-          severity: HIGH,CRITICAL
-
-      - name: Load Docker Image
-        run: docker load --input /tmp/image.tar
-
-      - name: Tag Docker Image for ECR
-        run: |
-          docker tag \
-            ${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-
-          docker tag \
-            ${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
-
-      - name: Push Docker Image to ECR
-        run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
-
-  verify-deployment:
-    name: Verify ECR Image on Runner
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-
-    steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::828562155228:role/github-actions-ecr-role
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Pull and Run Isolated Architecture
-        env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          REPOSITORY: ${{ env.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
-          DB_NAME: expenses_db
-          DB_USER: root
-          DB_PASSWORD: test_password
-        run: |
-          docker network create appbridge
-
-          docker run -d \
-            --name mysql \
-            --network appbridge \
-            -e MYSQL_ROOT_PASSWORD=$DB_PASSWORD \
-            -e MYSQL_DATABASE=$DB_NAME \
-            --health-cmd="mysqladmin ping -h localhost -u root -p$DB_PASSWORD" \
-            --health-interval=5s \
-            --health-timeout=2s \
-            --health-retries=10 \
-            mysql:8.4
-
-          echo "Waiting for database healthcheck status..."
-          until [ "$(docker inspect --format='{{.State.Health.Status}}' mysql)" = "healthy" ]; do
-            sleep 2
-          done
-
-          docker run -d \
-            --name Expensetracker \
-            --network appbridge \
-            -p 8081:8081 \
-            -e SPRING_DATASOURCE_USERNAME=$DB_USER \
-            -e SPRING_DATASOURCE_PASSWORD=$DB_PASSWORD \
-            -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql:3306/$DB_NAME?allowPublicKeyRetrieval=true&useSSL=false" \
-            -e SERVER_PORT=8081 \
-            $REGISTRY/$REPOSITORY:$IMAGE_TAG
-
-          echo "Polling Spring Boot application endpoint..."
-          TIMEOUT=45
-          ELAPSED=0
-
-          until curl -s --fail http://localhost:8081/ || [ $ELAPSED -ge $TIMEOUT ]; do
-            sleep 3
-            ELAPSED=$((ELAPSED + 3))
-          done
-
-          if curl -s --fail http://localhost:8081/; then
-            echo "Validation successful! Application is responding on port 8081."
-          else
-            echo "Verification failed! Printing application logs..."
-            docker logs Expensetracker
-            exit 1
-          fi
-
-      - name: Optional Manual Live Debugging Tunnel
-        if: ${{ github.event.inputs.manual_debug == 'true' }}
-        run: |
-          echo "=========================================================="
-          echo "WARNING: Manual debug session requested."
-          echo "Exposing port 8081 via temporary tunnel..."
-          echo "=========================================================="
-
-          npm install -g localtunnel
-
-          lt --port 8081 > lt.log 2>&1 &
-
-          sleep 5
-
-          echo "----------------------------------------------------------"
-          echo "ACCESS YOUR APP LOCALLY VIA THIS URL:"
-          cat lt.log | grep -o 'https://[^ ]*' || cat lt.log
-          echo "----------------------------------------------------------"
-
-          TIMEOUT_MINUTES=${{ github.event.inputs.debug_timeout || 5 }}
-          echo "Runner will remain active for $TIMEOUT_MINUTES minutes."
-
-          sleep $((TIMEOUT_MINUTES * 60))
-
-      - name: Infrastructure Cleanup
-        if: always()
-        run: |
-          docker rm -f Expensetracker mysql || true
-          docker network rm appbridge || true
+    uses: ./.github/workflows/verify-and-publish.yml
+    with:
+      image_tag: ${{ github.sha }}
+      manual_debug: ${{ github.event.inputs.manual_debug || 'false' }}
+      debug_timeout: ${{ github.event.inputs.debug_timeout || '5' }}
+    secrets: inherit
