@@ -1,4 +1,4 @@
-name: CI - Three-Tier Testing Strategy
+name: CI Pipeline
 
 on:
   push:
@@ -86,7 +86,7 @@ jobs:
     needs: test-and-package
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
@@ -127,7 +127,7 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
 
     steps:
       - name: Configure AWS Credentials
@@ -188,14 +188,6 @@ jobs:
               ELAPSED=$((ELAPSED + 3))
           done
 
-          if curl -s --fail http://localhost:8081/; then
-            echo "Validation successful! Application is responding flawlessly on port 8081."
-          else
-            echo "Verification failed! Printing application runtime logs:"
-            docker logs Expensetracker
-            exit 1
-          fi
-        
           if curl -s --fail http://localhost:8081/; then
             echo "Validation successful! Application is responding flawlessly on port 8081."
           else
