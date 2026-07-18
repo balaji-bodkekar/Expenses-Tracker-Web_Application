@@ -2,11 +2,24 @@ name: CI - Three-Tier Testing Strategy
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
+
+  workflow_dispatch:
+      inputs:
+        manual_debug:
+          description: 'Hold runner open for manual browser testing?'
+          required: false
+          default: 'false'
+          type: choice
+          options:
+            - 'true'
+            - 'false'
+        debug_timeout:
+          description: 'Minutes to wait before destroying the environment'
+          required: false
+          default: '5'
 
 permissions:
   id-token: write
@@ -182,6 +195,44 @@ jobs:
             docker logs Expensetracker
             exit 1
           fi
+        
+          if curl -s --fail http://localhost:8081/; then
+            echo "Validation successful! Application is responding flawlessly on port 8081."
+          else
+            echo "Verification failed! Printing application runtime logs:"
+            docker logs Expensetracker
+            exit 1
+          fi
+
+      - name: Optional Manual Live Debugging Tunnel
+        if: ${{ github.event.inputs.manual_debug == 'true' }}
+        run: |
+          echo "=========================================================="
+          echo "WARNING: Manual debug session requested."
+          echo "Exposing port 8081 via temporary tunnel..."
+          echo "=========================================================="
+          
+          # Install localtunnel globally via npm
+          npm install -g localtunnel
+          
+          # Start the tunnel in the background and log the public URL
+          lt --port 8081 > lt.log 2>&1 &
+          
+          # Give localtunnel a couple seconds to establish the link
+          sleep 5
+          
+          echo "----------------------------------------------------------"
+          echo "ACCESS YOUR APP LOCALLY VIA THIS URL:"
+          cat lt.log | grep -o 'https://[^ ]*' || cat lt.log
+          echo "----------------------------------------------------------"
+          
+          TIMEOUT_MINUTES=${{ github.event.inputs.debug_timeout || 5 }}
+          echo "Runner will remain active for $TIMEOUT_MINUTES minutes. Waiting..."
+          
+          # Sleep for the designated time
+          sleep $((TIMEOUT_MINUTES * 60))
+          
+          echo "Timeout reached. Proceeding to infrastructure cleanup."
 
       - name: Infrastructure Cleanup
         if: always()
