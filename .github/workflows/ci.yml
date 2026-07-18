@@ -118,6 +118,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          input: /tmp/image.tar
+          format: cyclonedx
+          output: sbom.cdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclonedx-sbom
+          path: sbom.cdx.json
+          retention-days: 30
+
       - name: Scan Docker Image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
