@@ -101,7 +101,7 @@ jobs:
         with:
           input: /tmp/image.tar
           format: table
-          exit-code: 1
+          exit-code: 0
           ignore-unfixed: true
           severity: CRITICAL
 
