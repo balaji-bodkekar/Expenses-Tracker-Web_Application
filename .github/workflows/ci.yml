@@ -6,19 +6,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      manual_debug:
-        description: Requires debug-approval environment reviewer
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
-      debug_timeout:
-        description: Minutes before teardown (capped at 15)
-        required: false
-        default: "5"
 
 permissions:
   id-token: write
@@ -41,6 +28,4 @@ jobs:
     uses: ./.github/workflows/verify-and-publish.yml
     with:
       image_tag: ${{ github.sha }}
-      manual_debug: ${{ github.event.inputs.manual_debug || 'false' }}
-      debug_timeout: ${{ github.event.inputs.debug_timeout || '5' }}
     secrets: inherit
