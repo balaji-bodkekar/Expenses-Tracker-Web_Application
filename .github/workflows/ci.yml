@@ -86,7 +86,7 @@ jobs:
     needs: test-and-package
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    if: github.ref == 'main' || github.event_name == 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
@@ -114,7 +114,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          push: ${{ github.event_name == 'push'}}
+          load: ${{ github.event_name == 'pull_request'}}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
@@ -161,7 +162,7 @@ jobs:
             --health-interval=5s \
             --health-timeout=2s \
             --health-retries=10 \
-            mysql:latest
+            mysql:8.4
           
           echo "Waiting for database healthcheck status..."
           until [ "$(docker inspect --format='{{.State.Health.Status}}' mysql)" = "healthy" ]; do
