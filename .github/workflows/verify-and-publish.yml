@@ -71,11 +71,11 @@ jobs:
         run: |
           TIMEOUT=45
           ELAPSED=0
-          until curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"' || [ $ELAPSED -ge $TIMEOUT ]; do
+          until curl -sf http://localhost:8081/ | grep -q '"status":"UP"' || [ $ELAPSED -ge $TIMEOUT ]; do
             sleep 3
             ELAPSED=$((ELAPSED + 3))
           done
-          if curl -sf http://localhost:8081/actuator/health | grep -q '"status":"UP"'; then
+          if curl -sf http://localhost:8081/actuator/ | grep -q '"status":"UP"'; then
             echo "Smoke test passed."
           else
             docker logs Expensetracker
