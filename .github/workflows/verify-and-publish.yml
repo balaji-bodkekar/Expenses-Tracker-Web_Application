@@ -117,13 +117,20 @@ jobs:
       # ECR API directly — no docker pull/push of image bytes required.
       - name: Promote Verified Image to 'latest'
         run: |
-          aws ecr batch-get-image \
-            --repository-name ${{ env.ECR_REPOSITORY }} \
-            --image-ids imageTag=${{ inputs.image_tag }} \
-            --query 'images[0].imageManifest' \
-            --output text > manifest.json
-
-          aws ecr put-image \
-            --repository-name ${{ env.ECR_REPOSITORY }} \
-            --image-tag latest \
-            --image-manifest file://manifest.json
+            aws ecr batch-get-image \
+              --repository-name ${{ env.ECR_REPOSITORY }} \
+              --image-ids imageTag=${{ inputs.image_tag }} \
+              --query 'images[0].imageManifest' \
+              --output text > manifest.json
+        
+            if aws ecr put-image \
+              --repository-name ${{ env.ECR_REPOSITORY }} \
+              --image-tag latest \
+              --image-manifest file://manifest.json 2> put-image-error.log; then
+              echo "Promoted ${{ inputs.image_tag }} to latest."
+            elif grep -q "ImageAlreadyExistsException" put-image-error.log; then
+              echo "latest already points at this digest — nothing to do."
+            else
+              cat put-image-error.log
+              exit 1
+            fi
