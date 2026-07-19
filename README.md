@@ -107,6 +107,7 @@ The pipeline is split into three reusable workflows chained together by `ci.yml`
 - On success, promotes the verified sha tag to `latest` via an ECR manifest copy — no image bytes are re-pushed, so the promoted tag is byte-for-byte what was already scanned and smoke-tested.
 
 **Design choices worth noting:**
+- The pipeline only triggers on changes to files that actually affect the build or runtime — `src/**`, `pom.xml`, `Dockerfile`, `docker-compose.yml`, `sql_script.sql`, and the workflows themselves (`.github/workflows/**`). Edits to docs, screenshots, or the README don't burn a CI run. `workflow_dispatch` is always available for a manual run regardless of what changed.
 - `concurrency` is scoped per branch/ref with `cancel-in-progress` on non-main branches, so redundant pushes don't queue up CI runs.
 - Every job has an explicit `timeout-minutes`, so a hung build or stuck container doesn't silently eat runner minutes.
 - The scan step uses `exit-code: 0` for the human-readable table output but the real gate is the earlier severity-filtered check — worth double-checking before assuming a red Trivy step will hard-fail the pipeline.
