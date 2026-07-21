@@ -32,6 +32,8 @@ public class SecurityConfig {
     http.authorizeHttpRequests(
             config ->
                 config
+                    .requestMatchers("/actuator/health")
+                    .permitAll()
                     .requestMatchers("/css/**")
                     .permitAll()
                     .requestMatchers("/assets/**")
