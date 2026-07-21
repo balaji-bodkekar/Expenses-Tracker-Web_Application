@@ -53,20 +53,31 @@ public class MainController {
   @GetMapping("/list")
   public String list(Model model, HttpSession session) {
     Client client = (Client) session.getAttribute("client");
+    if (client == null) {
+      return "redirect:/login"; // Guard against unauthenticated access
+    }
+
     int clientId = client.getId();
     List<Expense> expenseList = expenseService.findAllExpensesByClientId(clientId);
+
     for (Expense expense : expenseList) {
-      expense.setCategoryName(
-          categoryService.findCategoryById(expense.getCategory().getId()).getName());
-      expense.setDate(
-          LocalDateTime.parse(expense.getDateTime(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-              .toLocalDate()
-              .toString());
-      expense.setTime(
-          LocalDateTime.parse(expense.getDateTime(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-              .toLocalTime()
-              .toString());
+      // Safely resolve Category
+      if (expense.getCategory() != null) {
+        expense.setCategoryName(
+            categoryService.findCategoryById(expense.getCategory().getId()).getName());
+      } else {
+        expense.setCategoryName("Uncategorized");
+      }
+
+      // Safely format Date and Time
+      if (expense.getDateTime() != null && !expense.getDateTime().isBlank()) {
+        LocalDateTime ldt =
+            LocalDateTime.parse(expense.getDateTime(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        expense.setDate(ldt.toLocalDate().toString());
+        expense.setTime(ldt.toLocalTime().toString());
+      }
     }
+
     model.addAttribute("expenseList", expenseList);
     model.addAttribute("filter", new FilterDTO());
     return "list-page";
@@ -77,7 +88,14 @@ public class MainController {
     Expense expense = expenseService.findExpenseById(id);
     ExpenseDTO expenseDTO = new ExpenseDTO();
     expenseDTO.setAmount(expense.getAmount());
-    expenseDTO.setCategory(expense.getCategory().getName());
+    
+    // Add safe null check for Category
+    if (expense.getCategory() != null) {
+      expenseDTO.setCategory(expense.getCategory().getName());
+    } else {
+      expenseDTO.setCategory("Uncategorized");
+    }
+    
     expenseDTO.setDescription(expense.getDescription());
     expenseDTO.setDateTime(expense.getDateTime());
 
@@ -106,24 +124,26 @@ public class MainController {
 
   @PostMapping("/processFilter")
   public String processFilter(@ModelAttribute("filter") FilterDTO filter, Model model) {
-    System.out.println("--------------------------------------------------------------");
-    System.out.println("filter values : " + filter);
     List<Expense> expenseList = expenseService.findFilterResult(filter);
-    System.out.println("size ----> " + expenseList.size());
-    System.out.println(expenseList);
 
     for (Expense expense : expenseList) {
-      expense.setCategoryName(
-          categoryService.findCategoryById(expense.getCategory().getId()).getName());
-      expense.setDate(
-          LocalDateTime.parse(expense.getDateTime(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-              .toLocalDate()
-              .toString());
-      expense.setTime(
-          LocalDateTime.parse(expense.getDateTime(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-              .toLocalTime()
-              .toString());
+      // Safely resolve Category
+      if (expense.getCategory() != null) {
+        expense.setCategoryName(
+            categoryService.findCategoryById(expense.getCategory().getId()).getName());
+      } else {
+        expense.setCategoryName("Uncategorized");
+      }
+
+      // Safely format Date and Time
+      if (expense.getDateTime() != null && !expense.getDateTime().isBlank()) {
+        LocalDateTime ldt =
+            LocalDateTime.parse(expense.getDateTime(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        expense.setDate(ldt.toLocalDate().toString());
+        expense.setTime(ldt.toLocalTime().toString());
+      }
     }
+
     model.addAttribute("expenseList", expenseList);
     return "filter-result";
   }
