@@ -88,14 +88,14 @@ public class MainController {
     Expense expense = expenseService.findExpenseById(id);
     ExpenseDTO expenseDTO = new ExpenseDTO();
     expenseDTO.setAmount(expense.getAmount());
-    
+
     // Add safe null check for Category
     if (expense.getCategory() != null) {
       expenseDTO.setCategory(expense.getCategory().getName());
     } else {
       expenseDTO.setCategory("Uncategorized");
     }
-    
+
     expenseDTO.setDescription(expense.getDescription());
     expenseDTO.setDateTime(expense.getDateTime());
 
