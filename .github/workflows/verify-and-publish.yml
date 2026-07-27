@@ -53,6 +53,21 @@ jobs:
             --health-retries=10 \
             mysql:8.4
 
+          # Wait for MySQL readiness ...
+          
+          # Start app container with OpenTelemetry disabled or mocked during CI smoke test
+          docker run -d \
+            --name Expensetracker \
+            --network appbridge \
+            -p 8081:8081 \
+            -e SPRING_DATASOURCE_USERNAME=$DB_USER \
+            -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
+            -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql:3306/$DB_NAME?allowPublicKeyRetrieval=true&useSSL=false" \
+            -e SERVER_PORT=8081 \
+            -e OTEL_SERVICE_NAME="expenses-tracker-ci" \
+            -e OTEL_SDK_DISABLED=true \
+            "$IMAGE"
+
           DB_TIMEOUT=60
           DB_ELAPSED=0
           until [ "$(docker inspect --format='{{.State.Health.Status}}' mysql)" = "healthy" ]; do
