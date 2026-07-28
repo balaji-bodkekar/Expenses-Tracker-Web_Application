@@ -19,6 +19,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -42,6 +43,7 @@ jobs:
         run: |
           docker network create appbridge
 
+          # 1. Start MySQL container
           docker run -d \
             --name mysql \
             --network appbridge \
@@ -53,21 +55,7 @@ jobs:
             --health-retries=10 \
             mysql:8.4
 
-          # Wait for MySQL readiness ...
-          
-          # Start app container with OpenTelemetry disabled or mocked during CI smoke test
-          docker run -d \
-            --name Expensetracker \
-            --network appbridge \
-            -p 8081:8081 \
-            -e SPRING_DATASOURCE_USERNAME=$DB_USER \
-            -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
-            -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql:3306/$DB_NAME?allowPublicKeyRetrieval=true&useSSL=false" \
-            -e SERVER_PORT=8081 \
-            -e OTEL_SERVICE_NAME="expenses-tracker-ci" \
-            -e OTEL_SDK_DISABLED=true \
-            "$IMAGE"
-
+          # 2. Wait for MySQL readiness
           DB_TIMEOUT=60
           DB_ELAPSED=0
           until [ "$(docker inspect --format='{{.State.Health.Status}}' mysql)" = "healthy" ]; do
@@ -80,6 +68,7 @@ jobs:
             DB_ELAPSED=$((DB_ELAPSED + 2))
           done
 
+          # 3. Start App container after database is ready
           docker run -d \
             --name Expensetracker \
             --network appbridge \
@@ -88,6 +77,8 @@ jobs:
             -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
             -e SPRING_DATASOURCE_URL="jdbc:mysql://mysql:3306/$DB_NAME?allowPublicKeyRetrieval=true&useSSL=false" \
             -e SERVER_PORT=8081 \
+            -e OTEL_SERVICE_NAME="expenses-tracker-ci" \
+            -e OTEL_SDK_DISABLED=true \
             "$IMAGE"
 
       - name: Poll Application Health
@@ -98,6 +89,7 @@ jobs:
             sleep 3
             ELAPSED=$((ELAPSED + 3))
           done
+
           if curl -sf http://localhost:8081/ >/dev/null; then
             echo "Smoke test passed."
           else
@@ -119,6 +111,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -126,26 +119,22 @@ jobs:
           role-to-assume: arn:aws:iam::828562155228:role/github-actions-ecr-role
           aws-region: ${{ env.AWS_REGION }}
 
-      # The sha-tagged image was already pushed and scanned in the
-      # build-and-scan stage, and just passed the smoke test above. This
-      # copies the existing image manifest onto the 'latest' tag via the
-      # ECR API directly — no docker pull/push of image bytes required.
       - name: Promote Verified Image to 'latest'
         run: |
-            aws ecr batch-get-image \
-              --repository-name ${{ env.ECR_REPOSITORY }} \
-              --image-ids imageTag=${{ inputs.image_tag }} \
-              --query 'images[0].imageManifest' \
-              --output text > manifest.json
-        
-            if aws ecr put-image \
-              --repository-name ${{ env.ECR_REPOSITORY }} \
-              --image-tag latest \
-              --image-manifest file://manifest.json 2> put-image-error.log; then
-              echo "Promoted ${{ inputs.image_tag }} to latest."
-            elif grep -q "ImageAlreadyExistsException" put-image-error.log; then
-              echo "latest already points at this digest — nothing to do."
-            else
-              cat put-image-error.log
-              exit 1
-            fi
+          aws ecr batch-get-image \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-ids imageTag=${{ inputs.image_tag }} \
+            --query 'images[0].imageManifest' \
+            --output text > manifest.json
+
+          if aws ecr put-image \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-tag latest \
+            --image-manifest file://manifest.json 2> put-image-error.log; then
+            echo "Promoted ${{ inputs.image_tag }} to latest."
+          elif grep -q "ImageAlreadyExistsException" put-image-error.log; then
+            echo "latest already points at this digest — nothing to do."
+          else
+            cat put-image-error.log
+            exit 1
+          fi
