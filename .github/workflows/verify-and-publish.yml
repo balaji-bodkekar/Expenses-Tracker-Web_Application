@@ -134,8 +134,8 @@ jobs:
             --image-tag latest \
             --image-manifest file://manifest.json 2> put-image-error.log; then
             echo "Promoted ${{ inputs.image_tag }} to latest."
-          elif grep -q "ImageAlreadyExistsException" put-image-error.log; then
-            echo "latest already points at this digest — nothing to do."
+          elif grep -qE "ImageTagAlreadyExistsException|ImageAlreadyExistsException" put-image-error.log; then
+            echo "Tag 'latest' already exists or points at this digest — skipping."
           else
             cat put-image-error.log
             exit 1
